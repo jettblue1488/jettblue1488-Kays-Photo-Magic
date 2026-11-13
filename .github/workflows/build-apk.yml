@@ -30,9 +30,15 @@ jobs:
         with:
           name: Kays-Photo-Magic-debug-APK
           path: Kays-Photo-Magic.apk
-      - name: Publish latest APK to GitHub Releases
+      - name: Publish and verify direct APK download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view kayla-latest >/dev/null 2>&1 || gh release create kayla-latest --title "Kayla AI - Latest Android APK" --notes "Automatically updated Android APK. Download Kays-Photo-Magic.apk directly. Debug APK signatures can differ between builds; Android may require uninstalling an older debug installation first." --latest
-          gh release upload kayla-latest Kays-Photo-Magic.apk --clobber
+          set -euo pipefail
+          test -s Kays-Photo-Magic.apk
+          if gh release view kayla-latest >/dev/null 2>&1; then
+            gh release upload kayla-latest ./Kays-Photo-Magic.apk --clobber
+          else
+            gh release create kayla-latest ./Kays-Photo-Magic.apk --title "Kayla AI - Latest Android APK" --notes "Download Kays-Photo-Magic.apk from Assets to install Kayla on Android." --latest
+          fi
+          gh release view kayla-latest --json assets --jq '.assets[].name' | grep -Fx 'Kays-Photo-Magic.apk'
