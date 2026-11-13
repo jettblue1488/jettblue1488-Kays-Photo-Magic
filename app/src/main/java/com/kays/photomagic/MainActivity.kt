@@ -41,15 +41,15 @@ class MainActivity : Activity() {
         root.addView(TextView(this).apply { text = "Choose AI model"; setTextColor(purple); textSize = 17f })
         modelPicker = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
-                arrayOf("kayla.AI.7717 (local engine — setup needed)", "OpenAI GPT Image (connection needed)", "OpenAI GPT Image Mini (connection needed)", "Custom AI provider (coming soon)"))
+                arrayOf("kayla.AI.7717 — Online Premier", "OpenAI GPT Image", "OpenAI GPT Image Mini"))
         }
         root.addView(modelPicker)
-        root.addView(TextView(this).apply { text = "Kayla engine mode"; setTextColor(purple); textSize = 17f })
+        root.addView(TextView(this).apply { text = "Online image generation • 18+ confirmation required • Provider content rules apply"; setTextColor(purple); textSize = 14f })
         kaylaMode = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
-                arrayOf("Auto: online premier, offline fallback", "Online premier only", "Offline only"))
+                arrayOf("Online Premier (active)"))
         }
-        root.addView(kaylaMode)
+
         apiKey = EditText(this).apply {
             hint = "OpenAI API key (not stored)"
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -64,7 +64,7 @@ class MainActivity : Activity() {
             }
             val localReady = false // Replace only after a tested native inference engine and model are installed.
             status.text = "Internet: " + (if (online) "connected" else "unavailable") +
-                ". Online image provider: not configured. Offline image model: not installed." +
+                ". Online Premier: enter an API key to generate. Offline image model: not installed." +
                 (if (localReady) " Local engine ready." else " Generation requires engine setup.")
         })
         root.addView(button("🔞 Confirm I am 18+") {
@@ -111,11 +111,6 @@ class MainActivity : Activity() {
         val description = prompt.text.toString().trim()
         if (description.isEmpty()) { status.text = "Enter an image description first."; return }
         val selected = modelPicker.selectedItemPosition
-        if (selected == 3) { status.text = "Custom provider is not connected yet."; return }
-        if (selected == 0 && kaylaMode.selectedItemPosition == 2) {
-            status.text = "Kayla offline image model is not installed on this device yet."
-            return
-        }
         val key = apiKey.text.toString().trim()
         if (key.isEmpty()) { status.text = "Enter your OpenAI API key for online generation. It will not be saved."; return }
         val model = if (selected == 2) "gpt-image-1-mini" else "gpt-image-1"
