@@ -25,6 +25,8 @@ class MainActivity : Activity() {
     private lateinit var prompt: EditText
     private lateinit var status: TextView
     private var current: Bitmap? = null
+    private var previous: Bitmap? = null
+    private lateinit var editChoice: Spinner
     private lateinit var modelPicker: Spinner
     private lateinit var kaylaMode: Spinner
     private lateinit var apiKey: EditText
@@ -83,6 +85,15 @@ class MainActivity : Activity() {
         root.addView(pick)
         preview = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_CENTER; minimumHeight = 190; setBackgroundColor(Color.WHITE) }
         root.addView(preview, LinearLayout.LayoutParams(-1, 240))
+        root.addView(TextView(this).apply { text = "Offline editing choices"; setTextColor(purple); textSize = 17f })
+        editChoice = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                arrayOf("Brighten", "Darken", "Grayscale", "Warm colors", "Cool colors", "Mirror horizontally", "Rotate right", "Smooth enlarge"))
+        }
+        root.addView(editChoice)
+        root.addView(button("🎛 Apply selected offline edit") { applyOfflineEdit() })
+        root.addView(button("↶ Undo last edit") { previous?.let { current = it; preview.setImageBitmap(it); previous = null; status.text = "Last edit undone." } })
+        root.addView(button("📚 My saved photos") { showLibrary() })
         root.addView(button("✨ Enhance photo (offline)") { enhance() })
         root.addView(button("🎨 Generate from text") { generateImage(false) })
         root.addView(button("🪄 Modify uploaded photo") { generateImage(true) })
@@ -116,6 +127,7 @@ class MainActivity : Activity() {
                     }
                 }
                 preview.setImageBitmap(current)
+                saveToLibrary("Imported")
                 val count = data.clipData?.itemCount ?: 1
                 status.text = "$count photo(s) selected. First photo shown; multi-photo combining will require an image provider."
             } catch (e: Exception) { status.text = "Could not open photo: ${e.message}" }
@@ -185,7 +197,7 @@ class MainActivity : Activity() {
                 val encoded = if (selected == 0) json.getJSONObject("result").getString("image") else json.getJSONArray("data").getJSONObject(0).getString("b64_json")
                 val bytes = Base64.decode(encoded, Base64.DEFAULT)
                 val result = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("Image decode failed")
-                runOnUiThread { current = result; preview.setImageBitmap(result); status.text = "Image ready! Tap Save to add it to your gallery." }
+                runOnUiThread { current = result; preview.setImageBitmap(result); saveToLibrary("Generated"); status.text = "Image generated and saved to My saved photos." }
             } catch (e: Exception) {
                 runOnUiThread {
                     status.text = "Online generation failed: ${e.message}. Kayla offline generation is not installed; no automatic image fallback is available yet."
@@ -199,10 +211,61 @@ class MainActivity : Activity() {
         try {
             val w = (src.width * 1.5).toInt().coerceAtMost(2048)
             val h = (src.height * 1.5).toInt().coerceAtMost(2048)
+            previous = src
             current = Bitmap.createScaledBitmap(src, w, h, true)
             preview.setImageBitmap(current)
+            saveToLibrary("Edited")
             status.text = "Photo resized with smoothing. This is basic offline enhancement, not AI upscaling."
         } catch (e: OutOfMemoryError) { status.text = "Not enough phone memory to enhance this photo." }
+    }
+
+    private fun libraryDir(): File = File(filesDir, "photo_library").apply { mkdirs() }
+    private fun saveToLibrary(category: String) {
+        val image = current ?: return
+        try {
+            val file = File(libraryDir(), "${category}_${System.currentTimeMillis()}.png")
+            FileOutputStream(file).use { image.compress(Bitmap.CompressFormat.PNG, 95, it) }
+        } catch (e: Exception) { status.text = "Library save failed: ${e.message}" }
+    }
+    private fun showLibrary() {
+        val files = libraryDir().listFiles()?.filter { it.extension == "png" }?.sortedByDescending { it.lastModified() } ?: emptyList()
+        if (files.isEmpty()) { status.text = "Your photo library is empty."; return }
+        val names = files.map { "${it.nameWithoutExtension.substringBefore('_')} • " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it.lastModified())) }.toTypedArray()
+        AlertDialog.Builder(this).setTitle("My saved photos (${files.size})").setItems(names) { _, which ->
+            val bitmap = BitmapFactory.decodeFile(files[which].absolutePath)
+            if (bitmap != null) { current = bitmap; preview.setImageBitmap(bitmap); status.text = "Loaded saved photo." }
+        }.setNegativeButton("Close", null).show()
+    }
+    private fun applyOfflineEdit() {
+        val src = current ?: run { status.text = "Choose a photo first."; return }
+        try {
+            previous = src
+            val choice = editChoice.selectedItemPosition
+            val result = when (choice) {
+                6 -> { val m = android.graphics.Matrix().apply { postRotate(90f) }; Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true) }
+                5 -> { val m = android.graphics.Matrix().apply { preScale(-1f, 1f) }; Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true) }
+                7 -> Bitmap.createScaledBitmap(src, (src.width * 1.5f).toInt().coerceAtMost(2048), (src.height * 1.5f).toInt().coerceAtMost(2048), true)
+                else -> {
+                    val output = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
+                    val canvas = android.graphics.Canvas(output)
+                    val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+                    val cm = when (choice) {
+                        0 -> android.graphics.ColorMatrix(floatArrayOf(1f,0f,0f,0f,25f,0f,1f,0f,0f,25f,0f,0f,1f,0f,25f,0f,0f,0f,1f,0f))
+                        1 -> android.graphics.ColorMatrix(floatArrayOf(1f,0f,0f,0f,-25f,0f,1f,0f,0f,-25f,0f,0f,1f,0f,-25f,0f,0f,0f,1f,0f))
+                        2 -> android.graphics.ColorMatrix().apply { setSaturation(0f) }
+                        3 -> android.graphics.ColorMatrix(floatArrayOf(1.12f,0f,0f,0f,8f,0f,1f,0f,0f,0f,0f,0f,0.85f,0f,0f,0f,0f,0f,1f,0f))
+                        else -> android.graphics.ColorMatrix(floatArrayOf(0.88f,0f,0f,0f,0f,0f,1f,0f,0f,0f,0f,0f,1.15f,0f,8f,0f,0f,0f,1f,0f))
+                    }
+                    paint.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
+                    canvas.drawBitmap(src, 0f, 0f, paint)
+                    output
+                }
+            }
+            current = result
+            preview.setImageBitmap(result)
+            saveToLibrary("Edited")
+            status.text = "Offline edit applied and saved. Undo is available."
+        } catch (e: Exception) { status.text = "Edit failed: ${e.message}" }
     }
     private fun photoFile(): File {
         val file = File(getExternalFilesDir(null), "KaysPhotoMagic-${System.currentTimeMillis()}.png")
