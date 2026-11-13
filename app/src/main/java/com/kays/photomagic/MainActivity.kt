@@ -88,7 +88,7 @@ class MainActivity : Activity() {
         root.addView(button("🪄 Modify uploaded photo") { generateImage(true) })
         root.addView(button("💾 Save photo") { savePhoto() })
         root.addView(button("↗ Share photo") { sharePhoto() })
-        status = TextView(this).apply { text = "Tap 📎 to select a photo. Offline enhancement is ready."; textSize = 14f; setTextColor(purple); setPadding(0, 12, 0, 0) }
+        status = TextView(this).apply { text = "Kayla Free Online supports both text generation and photo editing with your Cloudflare token."; textSize = 14f; setTextColor(purple); setPadding(0, 12, 0, 0) }
         root.addView(status)
         scroll.addView(root)
         setContentView(scroll)
@@ -129,7 +129,7 @@ class MainActivity : Activity() {
         if (edit && current == null) { status.text = "Select a photo to edit first."; return }
         val key = apiKey.text.toString().trim()
         if (key.isEmpty()) { status.text = "Enter your provider API token. It will not be saved."; return }
-        if (selected == 0 && edit) { status.text = "Cloudflare free mode currently supports text-to-image only. For uploaded-photo editing, select an OpenAI model."; return }
+        
         if (selected == 0 && accountId.text.toString().trim().isEmpty()) { status.text = "Enter your Cloudflare Account ID."; return }
         val model = if (selected == 2) "gpt-image-1-mini" else "gpt-image-1"
         val cfAccount = accountId.text.toString().trim()
@@ -137,31 +137,40 @@ class MainActivity : Activity() {
         status.text = if (edit) "Editing uploaded photo..." else "Generating online image..."
         Thread {
             try {
-                val endpoint = if (selected == 0) "https://api.cloudflare.com/client/v4/accounts/$cfAccount/ai/run/@cf/black-forest-labs/flux-1-schnell" else if (edit) "https://api.openai.com/v1/images/edits" else "https://api.openai.com/v1/images/generations"
+                val endpoint = if (selected == 0) "https://api.cloudflare.com/client/v4/accounts/$cfAccount/ai/run/@cf/black-forest-labs/flux-2-klein-4b" else if (edit) "https://api.openai.com/v1/images/edits" else "https://api.openai.com/v1/images/generations"
                 val connection = URL(endpoint).openConnection() as HttpsURLConnection
                 connection.requestMethod = "POST"
                 connection.connectTimeout = 20000
                 connection.readTimeout = 120000
                 connection.doOutput = true
                 connection.setRequestProperty("Authorization", "Bearer $key")
-                if (edit) {
+                if (edit || selected == 0) {
                     val boundary = "KaylaBoundary" + System.currentTimeMillis()
                     connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-                    val photo = ByteArrayOutputStream().also { selectedPhoto!!.compress(Bitmap.CompressFormat.PNG, 95, it) }.toByteArray()
+                    val photo = if (edit) {
+                        val original = selectedPhoto!!
+                        val ratio = minOf(500f / original.width, 500f / original.height, 1f)
+                        val scaled = Bitmap.createScaledBitmap(original, (original.width * ratio).toInt().coerceAtLeast(1), (original.height * ratio).toInt().coerceAtLeast(1), true)
+                        ByteArrayOutputStream().also { scaled.compress(Bitmap.CompressFormat.PNG, 90, it) }.toByteArray()
+                    } else null
                     connection.outputStream.use { out ->
                         fun part(name: String, value: String) {
                             out.write("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$value\r\n".toByteArray())
                         }
-                        part("model", model)
+                        if (selected != 0) { part("model", model); part("size", "1024x1024") }
                         part("prompt", description)
-                        part("size", "1024x1024")
-                        out.write("--$boundary\r\nContent-Disposition: form-data; name=\"image\"; filename=\"photo.png\"\r\nContent-Type: image/png\r\n\r\n".toByteArray())
-                        out.write(photo)
-                        out.write("\r\n--$boundary--\r\n".toByteArray())
+                        if (selected == 0) { part("width", "768"); part("height", "768") }
+                        if (photo != null) {
+                            val field = if (selected == 0) "input_image_0" else "image"
+                            out.write("--$boundary\r\nContent-Disposition: form-data; name=\"$field\"; filename=\"photo.png\"\r\nContent-Type: image/png\r\n\r\n".toByteArray())
+                            out.write(photo)
+                            out.write("\r\n".toByteArray())
+                        }
+                        out.write("--$boundary--\r\n".toByteArray())
                     }
                 } else {
                     connection.setRequestProperty("Content-Type", "application/json")
-                    val payload = if (selected == 0) JSONObject().put("prompt", description).put("num_steps", 4) else JSONObject().put("model", model).put("prompt", description).put("size", "1024x1024")
+                    val payload = JSONObject().put("model", model).put("prompt", description).put("size", "1024x1024")
                     connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
                 }
                 val code = connection.responseCode
