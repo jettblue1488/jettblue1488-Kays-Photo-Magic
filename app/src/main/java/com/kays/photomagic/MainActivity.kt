@@ -1,6 +1,7 @@
 package com.kays.photomagic
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -19,6 +20,8 @@ class MainActivity : Activity() {
     private lateinit var prompt: EditText
     private lateinit var status: TextView
     private var current: Bitmap? = null
+    private lateinit var modelPicker: Spinner
+    private var adultConfirmed = false
     private val pink = Color.rgb(245, 49, 159)
     private val purple = Color.rgb(113, 38, 175)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,12 +32,25 @@ class MainActivity : Activity() {
         root.addView(TextView(this).apply { text = "Create • Edit • Enhance"; textSize = 16f; gravity = Gravity.CENTER; setTextColor(purple) })
         prompt = EditText(this).apply { hint = "Describe the image you want to create or how to edit your photo"; minLines = 2; maxLines = 4; setTextColor(Color.BLACK); setHintTextColor(Color.DKGRAY) }
         root.addView(prompt)
+        root.addView(TextView(this).apply { text = "Choose AI model"; setTextColor(purple); textSize = 17f })
+        modelPicker = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                arrayOf("OpenAI GPT Image", "OpenAI GPT Image Mini", "Custom AI provider (coming soon)"))
+        }
+        root.addView(modelPicker)
+        root.addView(button("🔞 Confirm I am 18+") {
+            AlertDialog.Builder(this).setTitle("18+ confirmation")
+                .setMessage("Are you 18 years of age or older? AI providers still enforce their content policies.")
+                .setPositiveButton("Yes, 18+") { _, _ -> adultConfirmed = true; status.text = "18+ confirmed for this session." }
+                .setNegativeButton("No") { _, _ -> adultConfirmed = false; status.text = "Adult mode disabled." }
+                .show()
+        })
         val pick = button("📎 Add reference / edit photo") { pickImages() }
         root.addView(pick)
         preview = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_CENTER; minimumHeight = 190; setBackgroundColor(Color.WHITE) }
         root.addView(preview, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(button("✨ Enhance photo (offline)") { enhance() })
-        root.addView(button("🎨 Generate AI image") { status.text = "AI generation needs a configured image provider. Your prompt and photos remain on this device until a provider is connected." })
+        root.addView(button("🎨 Generate AI image") { status.text = if (!adultConfirmed) "Confirm your age first." else "Selected: ${modelPicker.selectedItem}. AI provider connection is not yet configured." })
         root.addView(button("💾 Save photo") { savePhoto() })
         root.addView(button("↗ Share photo") { sharePhoto() })
         status = TextView(this).apply { text = "Tap 📎 to select a photo. Offline enhancement is ready."; textSize = 14f; setTextColor(purple); setPadding(0, 12, 0, 0) }
