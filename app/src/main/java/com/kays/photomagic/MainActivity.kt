@@ -4,6 +4,7 @@ import android.app.Activity
 import android.util.Base64
 import org.json.JSONObject
 import java.net.URL
+import java.io.ByteArrayOutputStream
 import javax.net.ssl.HttpsURLConnection
 import android.app.AlertDialog
 import android.content.Intent
@@ -27,6 +28,7 @@ class MainActivity : Activity() {
     private lateinit var modelPicker: Spinner
     private lateinit var kaylaMode: Spinner
     private lateinit var apiKey: EditText
+    private lateinit var accountId: EditText
     private var adultConfirmed = false
     private val pink = Color.rgb(245, 49, 159)
     private val purple = Color.rgb(113, 38, 175)
@@ -42,7 +44,7 @@ class MainActivity : Activity() {
         root.addView(TextView(this).apply { text = "Choose AI model"; setTextColor(purple); textSize = 17f })
         modelPicker = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
-                arrayOf("kayla.AI.7717 — Online Premier", "OpenAI GPT Image", "OpenAI GPT Image Mini"))
+                arrayOf("Kayla Free Online (Cloudflare)", "OpenAI GPT Image", "OpenAI GPT Image Mini"))
         }
         root.addView(modelPicker)
         root.addView(TextView(this).apply { text = "Online image generation • 18+ confirmation required • Provider content rules apply"; setTextColor(purple); textSize = 14f })
@@ -52,12 +54,14 @@ class MainActivity : Activity() {
         }
 
         apiKey = EditText(this).apply {
-            hint = "OpenAI API key (not stored)"
+            hint = "Provider API token (not stored)"
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
             setTextColor(Color.BLACK)
             setHintTextColor(Color.DKGRAY)
         }
         root.addView(apiKey)
+        accountId = EditText(this).apply { hint = "Cloudflare Account ID (free mode only)"; setTextColor(Color.BLACK); setHintTextColor(Color.DKGRAY) }
+        root.addView(accountId)
         root.addView(button("⚙ Check Kayla engine status") {
             val online = android.net.ConnectivityManager::class.java.let {
                 val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
@@ -80,7 +84,8 @@ class MainActivity : Activity() {
         preview = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_CENTER; minimumHeight = 190; setBackgroundColor(Color.WHITE) }
         root.addView(preview, LinearLayout.LayoutParams(-1, 240))
         root.addView(button("✨ Enhance photo (offline)") { enhance() })
-        root.addView(button("🎨 Generate AI image") { generateImage() })
+        root.addView(button("🎨 Generate from text") { generateImage(false) })
+        root.addView(button("🪄 Modify uploaded photo") { generateImage(true) })
         root.addView(button("💾 Save photo") { savePhoto() })
         root.addView(button("↗ Share photo") { sharePhoto() })
         status = TextView(this).apply { text = "Tap 📎 to select a photo. Offline enhancement is ready."; textSize = 14f; setTextColor(purple); setPadding(0, 12, 0, 0) }
@@ -116,35 +121,58 @@ class MainActivity : Activity() {
             } catch (e: Exception) { status.text = "Could not open photo: ${e.message}" }
         }
     }
-    private fun generateImage() {
+    private fun generateImage(edit: Boolean) {
         if (!adultConfirmed) { status.text = "Please confirm you are 18 or older first."; return }
         val description = prompt.text.toString().trim()
         if (description.isEmpty()) { status.text = "Enter an image description first."; return }
         val selected = modelPicker.selectedItemPosition
+        if (edit && current == null) { status.text = "Select a photo to edit first."; return }
         val key = apiKey.text.toString().trim()
-        if (key.isEmpty()) { status.text = "Enter your OpenAI API key for online generation. It will not be saved."; return }
+        if (key.isEmpty()) { status.text = "Enter your provider API token. It will not be saved."; return }
+        if (selected == 0 && edit) { status.text = "Free Cloudflare text-to-image is available; precise photo editing needs a supported image-edit provider. Select OpenAI for photo edits."; return }
+        if (selected == 0 && accountId.text.toString().trim().isEmpty()) { status.text = "Enter your Cloudflare Account ID."; return }
         val model = if (selected == 2) "gpt-image-1-mini" else "gpt-image-1"
-        status.text = "Requesting image from $model..."
+        val cfAccount = accountId.text.toString().trim()
+        status.text = if (edit) "Editing uploaded photo..." else "Generating online image..."
         Thread {
             try {
-                val connection = URL("https://api.openai.com/v1/images/generations").openConnection() as HttpsURLConnection
+                val endpoint = if (selected == 0) "https://api.cloudflare.com/client/v4/accounts/$cfAccount/ai/run/@cf/black-forest-labs/flux-1-schnell" else if (edit) "https://api.openai.com/v1/images/edits" else "https://api.openai.com/v1/images/generations"
+                val connection = URL(endpoint).openConnection() as HttpsURLConnection
                 connection.requestMethod = "POST"
                 connection.connectTimeout = 20000
                 connection.readTimeout = 120000
                 connection.doOutput = true
                 connection.setRequestProperty("Authorization", "Bearer $key")
-                connection.setRequestProperty("Content-Type", "application/json")
-                val payload = JSONObject().put("model", model).put("prompt", description).put("size", "1024x1024")
-                connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                if (edit) {
+                    val boundary = "KaylaBoundary" + System.currentTimeMillis()
+                    connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                    val photo = ByteArrayOutputStream().also { current!!.compress(Bitmap.CompressFormat.PNG, 95, it) }.toByteArray()
+                    connection.outputStream.use { out ->
+                        fun part(name: String, value: String) {
+                            out.write("--$boundary\\r\\nContent-Disposition: form-data; name=\\\"$name\\\"\\r\\n\\r\\n$value\\r\\n".toByteArray())
+                        }
+                        part("model", model)
+                        part("prompt", description)
+                        part("size", "1024x1024")
+                        out.write("--$boundary\\r\\nContent-Disposition: form-data; name=\\\"image\\\"; filename=\\\"photo.png\\\"\\r\\nContent-Type: image/png\\r\\n\\r\\n".toByteArray())
+                        out.write(photo)
+                        out.write("\\r\\n--$boundary--\\r\\n".toByteArray())
+                    }
+                } else {
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    val payload = if (selected == 0) JSONObject().put("prompt", description).put("num_steps", 4) else JSONObject().put("model", model).put("prompt", description).put("size", "1024x1024")
+                    connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                }
                 val code = connection.responseCode
                 val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
                     ?.bufferedReader()?.use { it.readText() } ?: ""
                 connection.disconnect()
                 if (code !in 200..299) {
-                    val message = try { JSONObject(response).optJSONObject("error")?.optString("message") ?: "HTTP $code" } catch (_: Exception) { "HTTP $code" }
+                    val message = try { JSONObject(response).optJSONObject("error")?.optString("message") ?: response.take(250) } catch (_: Exception) { "HTTP $code" }
                     throw IllegalStateException(message)
                 }
-                val encoded = JSONObject(response).getJSONArray("data").getJSONObject(0).getString("b64_json")
+                val json = JSONObject(response)
+                val encoded = if (selected == 0) json.getJSONObject("result").getString("image") else json.getJSONArray("data").getJSONObject(0).getString("b64_json")
                 val bytes = Base64.decode(encoded, Base64.DEFAULT)
                 val result = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("Image decode failed")
                 runOnUiThread { current = result; preview.setImageBitmap(result); status.text = "Image ready! Tap Save to add it to your gallery." }
