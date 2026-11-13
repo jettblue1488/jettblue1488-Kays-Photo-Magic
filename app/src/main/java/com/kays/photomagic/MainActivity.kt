@@ -35,7 +35,7 @@ class MainActivity : Activity() {
         root.addView(TextView(this).apply { text = "Choose AI model"; setTextColor(purple); textSize = 17f })
         modelPicker = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
-                arrayOf("OpenAI GPT Image", "OpenAI GPT Image Mini", "Custom AI provider (coming soon)"))
+                arrayOf("kayla.AI.7717 (local engine — setup needed)", "OpenAI GPT Image (connection needed)", "OpenAI GPT Image Mini (connection needed)", "Custom AI provider (coming soon)"))
         }
         root.addView(modelPicker)
         root.addView(button("🔞 Confirm I am 18+") {
@@ -50,7 +50,7 @@ class MainActivity : Activity() {
         preview = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_CENTER; minimumHeight = 190; setBackgroundColor(Color.WHITE) }
         root.addView(preview, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(button("✨ Enhance photo (offline)") { enhance() })
-        root.addView(button("🎨 Generate AI image") { status.text = if (!adultConfirmed) "Confirm your age first." else "Selected: ${modelPicker.selectedItem}. AI provider connection is not yet configured." })
+        root.addView(button("🎨 Generate AI image") { status.text = if (!adultConfirmed) "Confirm your age first." else if (modelPicker.selectedItemPosition == 0) "kayla.AI.7717 is selected. An on-device model and compatible inference runtime must be installed before it can generate images." else "Selected: ${modelPicker.selectedItem}. AI provider connection is not yet configured." })
         root.addView(button("💾 Save photo") { savePhoto() })
         root.addView(button("↗ Share photo") { sharePhoto() })
         status = TextView(this).apply { text = "Tap 📎 to select a photo. Offline enhancement is ready."; textSize = 14f; setTextColor(purple); setPadding(0, 12, 0, 0) }
