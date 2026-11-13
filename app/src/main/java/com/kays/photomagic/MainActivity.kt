@@ -1,6 +1,10 @@
 package com.kays.photomagic
 
 import android.app.Activity
+import android.util.Base64
+import org.json.JSONObject
+import java.net.URL
+import javax.net.ssl.HttpsURLConnection
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Bitmap
@@ -22,6 +26,7 @@ class MainActivity : Activity() {
     private var current: Bitmap? = null
     private lateinit var modelPicker: Spinner
     private lateinit var kaylaMode: Spinner
+    private lateinit var apiKey: EditText
     private var adultConfirmed = false
     private val pink = Color.rgb(245, 49, 159)
     private val purple = Color.rgb(113, 38, 175)
@@ -45,6 +50,13 @@ class MainActivity : Activity() {
                 arrayOf("Auto: online premier, offline fallback", "Online premier only", "Offline only"))
         }
         root.addView(kaylaMode)
+        apiKey = EditText(this).apply {
+            hint = "OpenAI API key (not stored)"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setTextColor(Color.BLACK)
+            setHintTextColor(Color.DKGRAY)
+        }
+        root.addView(apiKey)
         root.addView(button("⚙ Check Kayla engine status") {
             val online = android.net.ConnectivityManager::class.java.let {
                 val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
@@ -67,7 +79,7 @@ class MainActivity : Activity() {
         preview = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_CENTER; minimumHeight = 190; setBackgroundColor(Color.WHITE) }
         root.addView(preview, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(button("✨ Enhance photo (offline)") { enhance() })
-        root.addView(button("🎨 Generate AI image") { status.text = if (!adultConfirmed) "Confirm your age first." else if (modelPicker.selectedItemPosition == 0) "kayla.AI.7717 / ${kaylaMode.selectedItem}: Online provider and offline model must be configured. Automatic fallback will work only when both engines are installed." else "Selected: ${modelPicker.selectedItem}. AI provider connection is not yet configured." })
+        root.addView(button("🎨 Generate AI image") { generateImage() })
         root.addView(button("💾 Save photo") { savePhoto() })
         root.addView(button("↗ Share photo") { sharePhoto() })
         status = TextView(this).apply { text = "Tap 📎 to select a photo. Offline enhancement is ready."; textSize = 14f; setTextColor(purple); setPadding(0, 12, 0, 0) }
@@ -94,6 +106,51 @@ class MainActivity : Activity() {
             } catch (e: Exception) { status.text = "Could not open photo: ${e.message}" }
         }
     }
+    private fun generateImage() {
+        if (!adultConfirmed) { status.text = "Please confirm you are 18 or older first."; return }
+        val description = prompt.text.toString().trim()
+        if (description.isEmpty()) { status.text = "Enter an image description first."; return }
+        val selected = modelPicker.selectedItemPosition
+        if (selected == 3) { status.text = "Custom provider is not connected yet."; return }
+        if (selected == 0 && kaylaMode.selectedItemPosition == 2) {
+            status.text = "Kayla offline image model is not installed on this device yet."
+            return
+        }
+        val key = apiKey.text.toString().trim()
+        if (key.isEmpty()) { status.text = "Enter your OpenAI API key for online generation. It will not be saved."; return }
+        val model = if (selected == 2) "gpt-image-1-mini" else "gpt-image-1"
+        status.text = "Requesting image from $model..."
+        Thread {
+            try {
+                val connection = URL("https://api.openai.com/v1/images/generations").openConnection() as HttpsURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 20000
+                connection.readTimeout = 120000
+                connection.doOutput = true
+                connection.setRequestProperty("Authorization", "Bearer $key")
+                connection.setRequestProperty("Content-Type", "application/json")
+                val payload = JSONObject().put("model", model).put("prompt", description).put("size", "1024x1024")
+                connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                val code = connection.responseCode
+                val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                    ?.bufferedReader()?.use { it.readText() } ?: ""
+                connection.disconnect()
+                if (code !in 200..299) {
+                    val message = try { JSONObject(response).optJSONObject("error")?.optString("message") ?: "HTTP $code" } catch (_: Exception) { "HTTP $code" }
+                    throw IllegalStateException(message)
+                }
+                val encoded = JSONObject(response).getJSONArray("data").getJSONObject(0).getString("b64_json")
+                val bytes = Base64.decode(encoded, Base64.DEFAULT)
+                val result = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("Image decode failed")
+                runOnUiThread { current = result; preview.setImageBitmap(result); status.text = "Image ready! Tap Save to add it to your gallery." }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    status.text = "Online generation failed: ${e.message}. Kayla offline generation is not installed; no automatic image fallback is available yet."
+                }
+            }
+        }.start()
+    }
+
     private fun enhance() {
         val src = current ?: run { status.text = "Select a photo first."; return }
         val w = (src.width * 1.5).toInt().coerceAtMost(4096)
