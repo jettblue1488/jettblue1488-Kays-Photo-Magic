@@ -94,6 +94,8 @@ class MainActivity : Activity() {
         root.addView(button("🎛 Apply selected offline edit") { applyOfflineEdit() })
         root.addView(button("↶ Undo last edit") { previous?.let { current = it; preview.setImageBitmap(it); previous = null; status.text = "Last edit undone." } })
         root.addView(button("📚 My saved photos") { showLibrary() })
+        root.addView(button("📝 Open text document") { openDocument() })
+        root.addView(button("🔤 Add or replace text on photo") { editPhotoText() })
         root.addView(button("✨ Enhance photo (offline)") { enhance() })
         root.addView(button("🎨 Generate from text") { generateImage(false) })
         root.addView(button("🪄 Modify uploaded photo") { generateImage(true) })
@@ -114,6 +116,13 @@ class MainActivity : Activity() {
     @Deprecated("Legacy activity result used for Android 6 compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 101 && resultCode == RESULT_OK && data?.data != null) {
+            try {
+                val content = contentResolver.openInputStream(data.data!!)?.bufferedReader()?.use { it.readText() } ?: ""
+                showDocumentEditor(content)
+            } catch (e: Exception) { status.text = "Could not read document: ${e.message}" }
+            return
+        }
         if (requestCode == 100 && resultCode == RESULT_OK && data != null) {
             val uri = data.data ?: data.clipData?.getItemAt(0)?.uri ?: return
             try {
@@ -219,6 +228,75 @@ class MainActivity : Activity() {
         } catch (e: OutOfMemoryError) { status.text = "Not enough phone memory to enhance this photo." }
     }
 
+
+    private fun openDocument() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "text/plain"
+        }
+        startActivityForResult(intent, 101)
+    }
+    private fun showDocumentEditor(content: String) {
+        val editor = EditText(this).apply {
+            setText(content)
+            minLines = 10
+            gravity = Gravity.TOP
+            setTextIsSelectable(true)
+        }
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 12, 24, 12)
+            addView(TextView(this@MainActivity).apply { text = "Tap a word to select it, then type your correction." })
+            addView(ScrollView(this@MainActivity).apply { addView(editor) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        }
+        AlertDialog.Builder(this).setTitle("Text document editor")
+            .setView(layout)
+            .setPositiveButton("Save copy") { _, _ ->
+                try {
+                    val dir = File(filesDir, "documents").apply { mkdirs() }
+                    val file = File(dir, "Edited-${System.currentTimeMillis()}.txt")
+                    file.writeText(editor.text.toString())
+                    status.text = "Document saved privately: ${file.name}"
+                    showSavedDocument(file)
+                } catch (e: Exception) { status.text = "Document save failed: ${e.message}" }
+            }.setNegativeButton("Cancel", null).show()
+    }
+    private fun showSavedDocument(file: File) {
+        AlertDialog.Builder(this).setTitle("Document saved")
+            .setMessage("Your edited text is saved in the app. Export a copy to keep it if you uninstall.")
+            .setPositiveButton("Share text") { _, _ ->
+                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, file.readText())
+                }, "Export edited document"))
+            }.setNegativeButton("Close", null).show()
+    }
+    private fun editPhotoText() {
+        val src = current ?: run { status.text = "Upload or select a photo first."; return }
+        val entry = EditText(this).apply { hint = "Type replacement or new text"; setSingleLine(false) }
+        AlertDialog.Builder(this).setTitle("Add text to photo")
+            .setMessage("This first version places text on the photo. It does not automatically erase existing words.")
+            .setView(entry)
+            .setPositiveButton("Apply") { _, _ ->
+                val words = entry.text.toString()
+                if (words.isNotBlank()) {
+                    val out = src.copy(Bitmap.Config.ARGB_8888, true)
+                    val canvas = android.graphics.Canvas(out)
+                    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                        color = Color.BLACK
+                        textSize = (out.width / 18f).coerceIn(18f, 80f)
+                        typeface = Typeface.DEFAULT_BOLD
+                        setShadowLayer(2f, 1f, 1f, Color.WHITE)
+                    }
+                    canvas.drawText(words, out.width * 0.08f, out.height * 0.5f, paint)
+                    previous = src
+                    current = out
+                    preview.setImageBitmap(out)
+                    saveToLibrary("TextEdited")
+                    status.text = "Text added and saved. Use Undo to revert."
+                }
+            }.setNegativeButton("Cancel", null).show()
+    }
     private fun libraryDir(): File = File(filesDir, "photo_library").apply { mkdirs() }
     private fun saveToLibrary(category: String) {
         val image = current ?: return
