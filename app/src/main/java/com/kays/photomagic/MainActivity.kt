@@ -60,7 +60,7 @@ class MainActivity : Activity() {
             setHintTextColor(Color.DKGRAY)
         }
         root.addView(apiKey)
-        accountId = EditText(this).apply { hint = "Cloudflare Account ID (free mode only)"; setText(id); setTextColor(Color.BLACK); setHintTextColor(Color.DKGRAY) }
+        accountId = EditText(this).apply { hint = "Cloudflare Account ID (free mode only)"; setText("bc3dc03fda83ed5f4d308fa210015b97"); setTextColor(Color.BLACK); setHintTextColor(Color.DKGRAY) }
         root.addView(accountId)
         root.addView(button("⚙ Check Kayla engine status") {
             val online = android.net.ConnectivityManager::class.java.let {
@@ -129,10 +129,11 @@ class MainActivity : Activity() {
         if (edit && current == null) { status.text = "Select a photo to edit first."; return }
         val key = apiKey.text.toString().trim()
         if (key.isEmpty()) { status.text = "Enter your provider API token. It will not be saved."; return }
-        if (selected == 0 && edit) { status.text = "Free Cloudflare text-to-image is available; precise photo editing needs a supported image-edit provider. Select OpenAI for photo edits."; return }
+        if (selected == 0 && edit) { status.text = "Cloudflare free mode currently supports text-to-image only. For uploaded-photo editing, select an OpenAI model."; return }
         if (selected == 0 && accountId.text.toString().trim().isEmpty()) { status.text = "Enter your Cloudflare Account ID."; return }
         val model = if (selected == 2) "gpt-image-1-mini" else "gpt-image-1"
         val cfAccount = accountId.text.toString().trim()
+        val selectedPhoto = if (edit) current else null
         status.text = if (edit) "Editing uploaded photo..." else "Generating online image..."
         Thread {
             try {
@@ -146,7 +147,7 @@ class MainActivity : Activity() {
                 if (edit) {
                     val boundary = "KaylaBoundary" + System.currentTimeMillis()
                     connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-                    val photo = ByteArrayOutputStream().also { current!!.compress(Bitmap.CompressFormat.PNG, 95, it) }.toByteArray()
+                    val photo = ByteArrayOutputStream().also { selectedPhoto!!.compress(Bitmap.CompressFormat.PNG, 95, it) }.toByteArray()
                     connection.outputStream.use { out ->
                         fun part(name: String, value: String) {
                             out.write("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$value\r\n".toByteArray())
