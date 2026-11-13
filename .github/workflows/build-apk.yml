@@ -1,8 +1,10 @@
-name: Build Android APK
+name: Build and publish Kayla Android APK
 on:
   push:
     branches: [main]
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -12,8 +14,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      # Use Android SDK already available on GitHub-hosted Ubuntu runners.
-      # setup-android@v3 currently fails requesting removed SDK package 'tools'.
       - name: Configure Android SDK
         run: |
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
@@ -24,7 +24,15 @@ jobs:
           gradle-version: '8.9'
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
+      - name: Prepare direct-download APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk Kays-Photo-Magic.apk
       - uses: actions/upload-artifact@v4
         with:
           name: Kays-Photo-Magic-debug-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: Kays-Photo-Magic.apk
+      - name: Publish latest APK to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view kayla-latest >/dev/null 2>&1 || gh release create kayla-latest --title "Kayla AI - Latest Android APK" --notes "Automatically updated Android APK. Download Kays-Photo-Magic.apk directly. Debug APK signatures can differ between builds; Android may require uninstalling an older debug installation first." --latest
+          gh release upload kayla-latest Kays-Photo-Magic.apk --clobber
