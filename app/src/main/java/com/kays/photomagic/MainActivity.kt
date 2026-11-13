@@ -26,6 +26,9 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private var current: Bitmap? = null
     private var previous: Bitmap? = null
+    private var textEditX = 0.5f
+    private var textEditY = 0.5f
+    private var textEditRequest = ""
     private lateinit var editChoice: Spinner
     private lateinit var modelPicker: Spinner
     private lateinit var kaylaMode: Spinner
@@ -96,6 +99,29 @@ class MainActivity : Activity() {
         root.addView(button("📚 My saved photos") { showLibrary() })
         root.addView(button("📝 Open text document") { openDocument() })
         root.addView(button("🔤 Add or replace text on photo") { editPhotoText() })
+        root.addView(button("👆 Tap location of text on photo") {
+            status.text = "Tap the text location in the photo preview, then choose Add or replace text."
+            preview.setOnTouchListener { view, event ->
+                if (event.action == android.view.MotionEvent.ACTION_UP) {
+                    val image = current
+                    if (image != null) {
+                        val scale = minOf(view.width.toFloat() / image.width, view.height.toFloat() / image.height)
+                        val displayW = image.width * scale
+                        val displayH = image.height * scale
+                        textEditX = ((event.x - (view.width - displayW) / 2f) / displayW).coerceIn(0f, 1f)
+                        textEditY = ((event.y - (view.height - displayH) / 2f) / displayH).coerceIn(0f, 1f)
+                        status.text = "Text position selected. Tap Add or replace text to enter the correction."
+                    }
+                    true
+                } else true
+            }
+        })
+        root.addView(button("✨ AI Perfect Text Edit (online)") {
+            if (current == null) { status.text = "Choose a photo first."; return@button }
+            if (textEditRequest.isBlank()) { status.text = "Enter a text correction using Add or replace text first."; return@button }
+            prompt.setText("Retouch this edited photo naturally. Correct and blend the following text change: $textEditRequest. Match the surrounding typography, font, perspective, shadows, lighting and background. Preserve all other image details.")
+            generateImage(true)
+        })
         root.addView(button("✨ Enhance photo (offline)") { enhance() })
         root.addView(button("🎨 Generate from text") { generateImage(false) })
         root.addView(button("🪄 Modify uploaded photo") { generateImage(true) })
@@ -275,11 +301,12 @@ class MainActivity : Activity() {
         val src = current ?: run { status.text = "Upload or select a photo first."; return }
         val entry = EditText(this).apply { hint = "Type replacement or new text"; setSingleLine(false) }
         AlertDialog.Builder(this).setTitle("Add text to photo")
-            .setMessage("This first version places text on the photo. It does not automatically erase existing words.")
+            .setMessage("Tap a position on the photo first, then enter text. This places new text at that location; automatic recognition and erasing existing lettering are not yet available.")
             .setView(entry)
             .setPositiveButton("Apply") { _, _ ->
                 val words = entry.text.toString()
                 if (words.isNotBlank()) {
+                    textEditRequest = words
                     val out = src.copy(Bitmap.Config.ARGB_8888, true)
                     val canvas = android.graphics.Canvas(out)
                     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
@@ -288,7 +315,9 @@ class MainActivity : Activity() {
                         typeface = Typeface.DEFAULT_BOLD
                         setShadowLayer(2f, 1f, 1f, Color.WHITE)
                     }
-                    canvas.drawText(words, out.width * 0.08f, out.height * 0.5f, paint)
+                    val x = (out.width * textEditX).coerceIn(0f, out.width - 1f)
+                    val y = (out.height * textEditY).coerceIn(paint.textSize, out.height.toFloat())
+                    canvas.drawText(words, x, y, paint)
                     previous = src
                     current = out
                     preview.setImageBitmap(out)
