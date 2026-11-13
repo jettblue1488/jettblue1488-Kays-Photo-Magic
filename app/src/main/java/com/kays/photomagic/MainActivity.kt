@@ -60,7 +60,7 @@ class MainActivity : Activity() {
             setHintTextColor(Color.DKGRAY)
         }
         root.addView(apiKey)
-        accountId = EditText(this).apply { hint = "Cloudflare Account ID (free mode only)"; setTextColor(Color.BLACK); setHintTextColor(Color.DKGRAY) }
+        accountId = EditText(this).apply { hint = "Cloudflare Account ID (free mode only)"; setText(id); setTextColor(Color.BLACK); setHintTextColor(Color.DKGRAY) }
         root.addView(accountId)
         root.addView(button("⚙ Check Kayla engine status") {
             val online = android.net.ConnectivityManager::class.java.let {
