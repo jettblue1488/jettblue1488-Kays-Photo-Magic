@@ -24,8 +24,17 @@ jobs:
           gradle-version: '8.9'
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
+      - name: Verify installable APK
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$APK" | grep "name='com.kays.photomagic.kayla7717'"
       - name: Prepare direct-download APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Kays-Photo-Magic.apk
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk Kays-Photo-Magic.apk
+          cp Kays-Photo-Magic.apk "Kays-Photo-Magic-build-${{ github.run_number }}.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: Kays-Photo-Magic-debug-APK
@@ -37,8 +46,8 @@ jobs:
           set -euo pipefail
           test -s Kays-Photo-Magic.apk
           if gh release view kayla-latest >/dev/null 2>&1; then
-            gh release upload kayla-latest ./Kays-Photo-Magic.apk --clobber
+            gh release upload kayla-latest ./Kays-Photo-Magic.apk "./Kays-Photo-Magic-build-${{ github.run_number }}.apk" --clobber
           else
-            gh release create kayla-latest ./Kays-Photo-Magic.apk --title "Kayla AI - Latest Android APK" --notes "Download Kays-Photo-Magic.apk from Assets to install Kayla on Android." --latest
+            gh release create kayla-latest ./Kays-Photo-Magic.apk "./Kays-Photo-Magic-build-${{ github.run_number }}.apk" --title "Kayla AI - Latest Android APK" --notes "Download Kays-Photo-Magic.apk from Assets to install Kayla on Android." --latest
           fi
           gh release view kayla-latest --json assets --jq '.assets[].name' | grep -Fx 'Kays-Photo-Magic.apk'
