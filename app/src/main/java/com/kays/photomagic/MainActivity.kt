@@ -116,6 +116,7 @@ class MainActivity : Activity() {
                 } else true
             }
         })
+        root.addView(button("📱 Kayla Local Photo Smoothing (offline)") { localSmooth() })
         root.addView(button("✨ AI Perfect Text Edit (online)") {
             if (current == null) { status.text = "Choose a photo first."; return@button }
             if (textEditRequest.isBlank()) { status.text = "Enter a text correction using Add or replace text first."; return@button }
@@ -325,6 +326,33 @@ class MainActivity : Activity() {
                     status.text = "Text added and saved. Use Undo to revert."
                 }
             }.setNegativeButton("Cancel", null).show()
+    }
+    private fun localSmooth() {
+        val src = current ?: run { status.text = "Choose a photo first."; return }
+        Thread {
+            try {
+                val maxSide = maxOf(src.width, src.height)
+                val ratio = minOf(1f, 1600f / maxSide)
+                val w = (src.width * ratio).toInt().coerceAtLeast(1)
+                val h = (src.height * ratio).toInt().coerceAtLeast(1)
+                val small = Bitmap.createScaledBitmap(src, w, h, true)
+                val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(out)
+                val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG).apply {
+                    isAntiAlias = true
+                }
+                canvas.drawBitmap(small, 0f, 0f, paint)
+                runOnUiThread {
+                    previous = src
+                    current = out
+                    preview.setImageBitmap(out)
+                    saveToLibrary("LocalSmoothed")
+                    status.text = "Local smoothing applied and saved. No internet or API key used. This is bitmap smoothing, not a generative AI model."
+                }
+            } catch (e: Exception) {
+                runOnUiThread { status.text = "Offline smoothing failed: ${e.message}" }
+            }
+        }.start()
     }
     private fun libraryDir(): File = File(filesDir, "photo_library").apply { mkdirs() }
     private fun saveToLibrary(category: String) {
