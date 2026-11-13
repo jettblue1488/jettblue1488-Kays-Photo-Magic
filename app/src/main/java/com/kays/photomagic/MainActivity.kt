@@ -32,6 +32,7 @@ class MainActivity : Activity() {
     private val purple = Color.rgb(113, 38, 175)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val scroll = ScrollView(this).apply { isFillViewport = true }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(22, 28, 22, 18); setBackgroundColor(Color.rgb(250, 237, 255)) }
         val title = TextView(this).apply { text = "✨ Kay's Photo Magic ✨"; textSize = 25f; setTextColor(purple); typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER }
         root.addView(title)
@@ -77,14 +78,15 @@ class MainActivity : Activity() {
         val pick = button("📎 Add reference / edit photo") { pickImages() }
         root.addView(pick)
         preview = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_CENTER; minimumHeight = 190; setBackgroundColor(Color.WHITE) }
-        root.addView(preview, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(preview, LinearLayout.LayoutParams(-1, 240))
         root.addView(button("✨ Enhance photo (offline)") { enhance() })
         root.addView(button("🎨 Generate AI image") { generateImage() })
         root.addView(button("💾 Save photo") { savePhoto() })
         root.addView(button("↗ Share photo") { sharePhoto() })
         status = TextView(this).apply { text = "Tap 📎 to select a photo. Offline enhancement is ready."; textSize = 14f; setTextColor(purple); setPadding(0, 12, 0, 0) }
         root.addView(status)
-        setContentView(root)
+        scroll.addView(root)
+        setContentView(scroll)
     }
     private fun button(label: String, action: () -> Unit) = Button(this).apply {
         text = label; setTextColor(Color.WHITE); setBackgroundTintList(android.content.res.ColorStateList.valueOf(if(label.contains("📎")) purple else pink)); setOnClickListener { action() }
@@ -99,7 +101,15 @@ class MainActivity : Activity() {
         if (requestCode == 100 && resultCode == RESULT_OK && data != null) {
             val uri = data.data ?: data.clipData?.getItemAt(0)?.uri ?: return
             try {
-                contentResolver.openInputStream(uri)?.use { current = BitmapFactory.decodeStream(it) }
+                contentResolver.openInputStream(uri)?.use { stream ->
+                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeStream(stream, null, options)
+                    val longest = maxOf(options.outWidth, options.outHeight)
+                    val sample = generateSequence(1) { it * 2 }.first { longest / it <= 1600 }
+                    contentResolver.openInputStream(uri)?.use { imageStream ->
+                        current = BitmapFactory.decodeStream(imageStream, null, BitmapFactory.Options().apply { inSampleSize = sample })
+                    }
+                }
                 preview.setImageBitmap(current)
                 val count = data.clipData?.itemCount ?: 1
                 status.text = "$count photo(s) selected. First photo shown; multi-photo combining will require an image provider."
@@ -148,11 +158,13 @@ class MainActivity : Activity() {
 
     private fun enhance() {
         val src = current ?: run { status.text = "Select a photo first."; return }
-        val w = (src.width * 1.5).toInt().coerceAtMost(4096)
-        val h = (src.height * 1.5).toInt().coerceAtMost(4096)
-        current = Bitmap.createScaledBitmap(src, w, h, true)
-        preview.setImageBitmap(current)
-        status.text = "Photo resized with smoothing. This is basic offline enhancement, not AI upscaling."
+        try {
+            val w = (src.width * 1.5).toInt().coerceAtMost(2048)
+            val h = (src.height * 1.5).toInt().coerceAtMost(2048)
+            current = Bitmap.createScaledBitmap(src, w, h, true)
+            preview.setImageBitmap(current)
+            status.text = "Photo resized with smoothing. This is basic offline enhancement, not AI upscaling."
+        } catch (e: OutOfMemoryError) { status.text = "Not enough phone memory to enhance this photo." }
     }
     private fun photoFile(): File {
         val file = File(getExternalFilesDir(null), "KaysPhotoMagic-${System.currentTimeMillis()}.png")
