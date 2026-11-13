@@ -21,6 +21,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private var current: Bitmap? = null
     private lateinit var modelPicker: Spinner
+    private lateinit var kaylaMode: Spinner
     private var adultConfirmed = false
     private val pink = Color.rgb(245, 49, 159)
     private val purple = Color.rgb(113, 38, 175)
@@ -38,6 +39,22 @@ class MainActivity : Activity() {
                 arrayOf("kayla.AI.7717 (local engine — setup needed)", "OpenAI GPT Image (connection needed)", "OpenAI GPT Image Mini (connection needed)", "Custom AI provider (coming soon)"))
         }
         root.addView(modelPicker)
+        root.addView(TextView(this).apply { text = "Kayla engine mode"; setTextColor(purple); textSize = 17f })
+        kaylaMode = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                arrayOf("Auto: online premier, offline fallback", "Online premier only", "Offline only"))
+        }
+        root.addView(kaylaMode)
+        root.addView(button("⚙ Check Kayla engine status") {
+            val online = android.net.ConnectivityManager::class.java.let {
+                val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                cm.activeNetworkInfo?.isConnected == true
+            }
+            val localReady = false // Replace only after a tested native inference engine and model are installed.
+            status.text = "Internet: " + (if (online) "connected" else "unavailable") +
+                ". Online image provider: not configured. Offline image model: not installed." +
+                (if (localReady) " Local engine ready." else " Generation requires engine setup.")
+        })
         root.addView(button("🔞 Confirm I am 18+") {
             AlertDialog.Builder(this).setTitle("18+ confirmation")
                 .setMessage("Are you 18 years of age or older? AI providers still enforce their content policies.")
@@ -50,7 +67,7 @@ class MainActivity : Activity() {
         preview = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_CENTER; minimumHeight = 190; setBackgroundColor(Color.WHITE) }
         root.addView(preview, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(button("✨ Enhance photo (offline)") { enhance() })
-        root.addView(button("🎨 Generate AI image") { status.text = if (!adultConfirmed) "Confirm your age first." else if (modelPicker.selectedItemPosition == 0) "kayla.AI.7717 is selected. An on-device model and compatible inference runtime must be installed before it can generate images." else "Selected: ${modelPicker.selectedItem}. AI provider connection is not yet configured." })
+        root.addView(button("🎨 Generate AI image") { status.text = if (!adultConfirmed) "Confirm your age first." else if (modelPicker.selectedItemPosition == 0) "kayla.AI.7717 / ${kaylaMode.selectedItem}: Online provider and offline model must be configured. Automatic fallback will work only when both engines are installed." else "Selected: ${modelPicker.selectedItem}. AI provider connection is not yet configured." })
         root.addView(button("💾 Save photo") { savePhoto() })
         root.addView(button("↗ Share photo") { sharePhoto() })
         status = TextView(this).apply { text = "Tap 📎 to select a photo. Offline enhancement is ready."; textSize = 14f; setTextColor(purple); setPadding(0, 12, 0, 0) }
