@@ -149,12 +149,12 @@ class MainActivity : Activity() {
                     val photo = ByteArrayOutputStream().also { current!!.compress(Bitmap.CompressFormat.PNG, 95, it) }.toByteArray()
                     connection.outputStream.use { out ->
                         fun part(name: String, value: String) {
-                            out.write("--$boundary\r\nContent-Disposition: form-data; name=\\"$name\\"\r\n\r\n$value\r\n".toByteArray())
+                            out.write("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$value\r\n".toByteArray())
                         }
                         part("model", model)
                         part("prompt", description)
                         part("size", "1024x1024")
-                        out.write("--$boundary\r\nContent-Disposition: form-data; name=\\"image\\"; filename=\\"photo.png\\"\r\nContent-Type: image/png\r\n\r\n".toByteArray())
+                        out.write("--$boundary\r\nContent-Disposition: form-data; name=\"image\"; filename=\"photo.png\"\r\nContent-Type: image/png\r\n\r\n".toByteArray())
                         out.write(photo)
                         out.write("\r\n--$boundary--\r\n".toByteArray())
                     }
